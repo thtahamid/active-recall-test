@@ -71,9 +71,9 @@ const shadows = {
   inset: "inset 0 2px 6px rgba(80,60,180,0.07)",
 };
 
-const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-const shuffle = arr => [...arr].sort(() => Math.random() - 0.5);
+const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5);
 
 /* ── Shared UI ── */
 const Card = ({ children, style = {}, depth = "md" }) => (
