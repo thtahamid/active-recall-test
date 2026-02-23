@@ -1,12 +1,47 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine, Cell
 } from "recharts";
 
+/* ── Breakpoint hook ── */
+type Breakpoint = "mobile" | "tablet" | "laptop" | "desktop";
+
+function getBreakpoint(w: number): Breakpoint {
+  if (w <= 480) return "mobile";
+  if (w <= 768) return "tablet";
+  if (w <= 1280) return "laptop";
+  return "desktop";
+}
+
+function useBreakpoint(): Breakpoint {
+  const [bp, setBp] = useState<Breakpoint>(() =>
+    typeof window !== "undefined" ? getBreakpoint(window.innerWidth) : "desktop"
+  );
+
+  useEffect(() => {
+    const handleResize = () => setBp(getBreakpoint(window.innerWidth));
+    window.addEventListener("resize", handleResize);
+    handleResize();
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  return bp;
+}
+
+/* Convenience picker: pass {mobile, tablet, laptop, desktop} or fewer keys,
+   falls back from mobile up to the nearest defined key. */
+function pick<T>(bp: Breakpoint, map: Partial<Record<Breakpoint, T>> & { desktop: T }): T {
+  if (bp === "mobile"  && map.mobile  !== undefined) return map.mobile;
+  if (bp === "tablet"  && map.tablet  !== undefined) return map.tablet;
+  if (bp === "laptop"  && map.laptop  !== undefined) return map.laptop;
+  return map.desktop;
+}
+
+/* ── Data ── */
 const WORDS = [
   { word: "Apple",    lang: "EN", pos: 1  },
   { word: "Hund",     lang: "SV", pos: 2  },
@@ -25,7 +60,6 @@ const WORDS = [
   { word: "Horizon",  lang: "EN", pos: 15 },
 ];
 
-// False positives — plausible but not in the list
 const FALSE_POSITIVES = [
   { word: "Forest",   lang: "EN" },
   { word: "Lampa",    lang: "SV" },
@@ -51,6 +85,7 @@ const EBBINGHAUS = [
   { label: "1 wk",   retention: 23  },
 ];
 
+/* ── Design tokens ── */
 const c = {
   bg:      "#eeedf8",
   base:    "#f4f3fc",
@@ -74,18 +109,39 @@ const shadows = {
 };
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-
 const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5);
 
 /* ── Shared UI ── */
-const Card = ({ children, style = {}, depth = "md" }: { children: React.ReactNode; style?: React.CSSProperties; depth?: string }) => (
-  <div style={{ background: c.surface, borderRadius: 18, padding: "28px 30px", boxShadow: shadows[depth as keyof typeof shadows], ...style }}>
+const Card = ({ children, style = {}, depth = "md", bp }: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+  depth?: string;
+  bp: Breakpoint;
+}) => (
+  <div style={{
+    background: c.surface,
+    borderRadius: pick(bp, { mobile: 14, tablet: 16, desktop: 18 }),
+    padding: pick(bp, { mobile: "14px 16px", tablet: "18px 20px", laptop: "22px 24px", desktop: "28px 30px" }),
+    boxShadow: shadows[depth as keyof typeof shadows],
+    ...style,
+  }}>
     {children}
   </div>
 );
 
-const InsetPanel = ({ children, style = {} }: { children: React.ReactNode; style?: React.CSSProperties }) => (
-  <div style={{ background: c.bg, borderRadius: 12, padding: "18px 20px", boxShadow: shadows.inset, border: `1px solid ${c.border}`, ...style }}>
+const InsetPanel = ({ children, style = {}, bp }: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+  bp: Breakpoint;
+}) => (
+  <div style={{
+    background: c.bg,
+    borderRadius: pick(bp, { mobile: 10, tablet: 11, desktop: 12 }),
+    padding: pick(bp, { mobile: "12px 14px", tablet: "14px 16px", desktop: "18px 20px" }),
+    boxShadow: shadows.inset,
+    border: `1px solid ${c.border}`,
+    ...style,
+  }}>
     {children}
   </div>
 );
@@ -97,52 +153,104 @@ const Badge = ({ lang }: { lang: string }) => (
     color: lang === "EN" ? c.indigo : c.rose,
     border: `1px solid ${lang === "EN" ? "#c4b5fd" : "#fda4af"}`,
     boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
+    whiteSpace: "nowrap",
   }}>{lang}</span>
 );
 
 const StatPill = ({ label, value, color }: { label: string; value: string | number; color: string }) => (
-  <div style={{ background: c.surface, borderRadius: 14, padding: "18px 16px", textAlign: "center", boxShadow: shadows.md, borderTop: `3px solid ${color}` }}>
-    <div style={{ fontSize: 26, fontWeight: 900, color, lineHeight: 1 }}>{value}</div>
-    <div style={{ fontSize: 11, color: c.muted, marginTop: 5, fontWeight: 600, letterSpacing: 0.4 }}>{label}</div>
+  <div style={{
+    background: c.surface, borderRadius: 14, padding: "14px 10px",
+    textAlign: "center", boxShadow: shadows.md, borderTop: `3px solid ${color}`,
+  }}>
+    <div style={{ fontSize: 22, fontWeight: 900, color, lineHeight: 1 }}>{value}</div>
+    <div style={{ fontSize: 10, color: c.muted, marginTop: 5, fontWeight: 600, letterSpacing: 0.4 }}>{label}</div>
   </div>
 );
 
-const Btn = ({ children, onClick, color = c.indigo, style = {}, disabled = false }: { children: React.ReactNode; onClick?: () => void; color?: string; style?: React.CSSProperties; disabled?: boolean }) => (
+const Btn = ({ children, onClick, color = c.indigo, style = {}, disabled = false, bp }: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  color?: string;
+  style?: React.CSSProperties;
+  disabled?: boolean;
+  bp: Breakpoint;
+}) => (
   <button onClick={onClick} disabled={disabled} style={{
-    background: disabled ? "#ccc" : color, color: "#fff", border: "none",
-    borderRadius: 12, padding: "13px 30px", fontSize: 14, fontWeight: 700,
-    cursor: disabled ? "not-allowed" : "pointer", letterSpacing: 0.3,
+    background: disabled ? "#ccc" : color,
+    color: "#fff",
+    border: "none",
+    borderRadius: 12,
+    padding: pick(bp, { mobile: "12px 18px", tablet: "12px 22px", laptop: "13px 26px", desktop: "13px 30px" }),
+    fontSize: pick(bp, { mobile: 13, tablet: 13, desktop: 14 }),
+    fontWeight: 700,
+    cursor: disabled ? "not-allowed" : "pointer",
+    letterSpacing: 0.3,
     boxShadow: disabled ? "none" : `0 4px 14px ${color}55`,
-    transition: "transform 0.1s", ...style,
+    transition: "transform 0.1s",
+    minHeight: (bp === "mobile" || bp === "tablet") ? 44 : undefined,
+    ...style,
   }}>{children}</button>
 );
 
-const TimerBadge = ({ time, color }: { time: number; color: string }) => (
+const TimerBadge = ({ time, color, bp }: { time: number; color: string; bp: Breakpoint }) => (
   <div style={{
-    display: "inline-block", background: c.surface, border: `2px solid ${color}`,
-    color, fontSize: 30, fontWeight: 900, borderRadius: 16, padding: "8px 28px",
-    letterSpacing: 3, marginBottom: 18, boxShadow: `0 4px 20px ${color}33, ${shadows.sm}`,
+    display: "inline-block",
+    background: c.surface,
+    border: `2px solid ${color}`,
+    color,
+    fontSize: pick(bp, { mobile: 22, tablet: 24, laptop: 28, desktop: 30 }),
+    fontWeight: 900,
+    borderRadius: 16,
+    padding: pick(bp, { mobile: "6px 18px", tablet: "7px 22px", desktop: "8px 28px" }),
+    letterSpacing: 3,
+    marginBottom: pick(bp, { mobile: 12, desktop: 18 }),
+    boxShadow: `0 4px 20px ${color}33, ${shadows.sm}`,
   }}>{fmt(time)}</div>
 );
 
-const H1 = ({ children }: { children: React.ReactNode }) => <h1 style={{ fontSize: 32, fontWeight: 900, margin: "10px 0 6px", color: c.text, letterSpacing: -0.5 }}>{children}</h1>;
-const H2 = ({ children }: { children: React.ReactNode }) => <h2 style={{ fontSize: 22, fontWeight: 800, margin: "8px 0 6px", color: c.text }}>{children}</h2>;
-const H3 = ({ children }: { children: React.ReactNode }) => <h3 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 4px", color: c.text }}>{children}</h3>;
-const Sub = ({ children }: { children: React.ReactNode }) => <p style={{ color: c.muted, fontSize: 14, lineHeight: 1.65, margin: "0 0 4px" }}>{children}</p>;
-const ChartSub = ({ children }: { children: React.ReactNode }) => <p style={{ color: c.muted, fontSize: 13, lineHeight: 1.6, margin: "0 0 20px" }}>{children}</p>;
+const H1 = ({ children, bp }: { children: React.ReactNode; bp: Breakpoint }) => (
+  <h1 style={{
+    fontSize: pick(bp, { mobile: 20, tablet: 24, laptop: 28, desktop: 32 }),
+    fontWeight: 900,
+    margin: "10px 0 6px",
+    color: c.text,
+    letterSpacing: -0.5,
+    lineHeight: 1.2,
+  }}>{children}</h1>
+);
 
-const page: React.CSSProperties = {
-  minHeight: "100vh",
-  background: `radial-gradient(ellipse at 60% 0%, #ddd9ff 0%, ${c.bg} 55%)`,
-  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-  paddingTop: 48, paddingBottom: 48, paddingLeft: 20, paddingRight: 20,
-  fontFamily: "'Inter', system-ui, sans-serif", color: c.text,
-};
+const H2 = ({ children, bp }: { children: React.ReactNode; bp: Breakpoint }) => (
+  <h2 style={{
+    fontSize: pick(bp, { mobile: 16, tablet: 18, laptop: 20, desktop: 22 }),
+    fontWeight: 800,
+    margin: "8px 0 6px",
+    color: c.text,
+    lineHeight: 1.2,
+  }}>{children}</h2>
+);
+
+const H3 = ({ children }: { children: React.ReactNode }) => (
+  <h3 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 4px", color: c.text }}>{children}</h3>
+);
+
+const Sub = ({ children }: { children: React.ReactNode }) => (
+  <p style={{ color: c.muted, fontSize: 14, lineHeight: 1.65, margin: "0 0 4px" }}>{children}</p>
+);
+
+const ChartSub = ({ children }: { children: React.ReactNode }) => (
+  <p style={{ color: c.muted, fontSize: 13, lineHeight: 1.6, margin: "0 0 20px" }}>{children}</p>
+);
 
 /* ── Word Choice Tile ── */
 type TileState = "idle" | "selected" | "correct" | "miss" | "false-pos";
 
-const WordTile = ({ word, lang, state, onClick }: { word: string; lang: string; state: TileState; onClick: () => void }) => {
+const WordTile = ({ word, lang, state, onClick, bp }: {
+  word: string;
+  lang: string;
+  state: TileState;
+  onClick: () => void;
+  bp: Breakpoint;
+}) => {
   const styles: Record<TileState, { bg: string; border: string; text: string; shadow: string }> = {
     idle:        { bg: c.surface,   border: c.border,  text: c.text,   shadow: shadows.sm },
     selected:    { bg: "#ede9fe",   border: c.indigo,  text: c.indigo, shadow: `0 0 0 2px ${c.indigo}55, ${shadows.md}` },
@@ -152,25 +260,40 @@ const WordTile = ({ word, lang, state, onClick }: { word: string; lang: string; 
   };
   const s = styles[state] || styles.idle;
 
-  const icons: Record<TileState, string | null> = { idle: null, selected: "●", correct: "✓", miss: "○", "false-pos": "✗" };
+  const icons: Record<TileState, string | null> = {
+    idle: null, selected: "●", correct: "✓", miss: "○", "false-pos": "✗",
+  };
+
+  const isMobile = bp === "mobile";
 
   return (
     <button onClick={onClick} style={{
-      background: s.bg, border: `1.5px solid ${s.border}`, borderRadius: 12,
-      padding: "12px 10px", cursor: state === "idle" || state === "selected" ? "pointer" : "default",
-      display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-      boxShadow: s.shadow, transition: "all 0.15s", outline: "none",
+      background: s.bg,
+      border: `1.5px solid ${s.border}`,
+      borderRadius: 12,
+      padding: isMobile ? "10px 6px" : "12px 10px",
+      minHeight: (bp === "mobile" || bp === "tablet") ? 54 : undefined,
+      cursor: state === "idle" || state === "selected" ? "pointer" : "default",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: isMobile ? 4 : 6,
+      boxShadow: s.shadow,
+      transition: "all 0.15s",
+      outline: "none",
       transform: state === "selected" ? "translateY(-2px)" : "none",
+      width: "100%",
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
         {icons[state] && <span style={{ fontSize: 12, color: s.text, fontWeight: 900 }}>{icons[state]}</span>}
         <span style={{ flex: 1, textAlign: icons[state] ? "right" : "center" }}><Badge lang={lang} /></span>
       </div>
-      <span style={{ fontWeight: 700, fontSize: 14, color: s.text }}>{word}</span>
+      <span style={{ fontWeight: 700, fontSize: isMobile ? 12 : 14, color: s.text }}>{word}</span>
     </button>
   );
 };
 
+/* ── Types ── */
 type Phase = "intro" | "study" | "distract" | "recall" | "results";
 
 interface WordItem {
@@ -199,13 +322,16 @@ interface Scores {
 
 /* ── Main App ── */
 export default function ActiveRecallApp() {
+  const bp = useBreakpoint();
+  const isMobile = bp === "mobile";
+  const isSmall  = bp === "mobile" || bp === "tablet";
+
   const [phase, setPhase]         = useState<Phase>("intro");
   const [timer, setTimer]         = useState(0);
   const [selected, setSelected]   = useState(new Set<string>());
   const [submitted, setSubmitted] = useState(false);
   const [scores, setScores]       = useState<Scores | null>(null);
 
-  // Build shuffled grid once
   const grid = useMemo<WordItem[]>(() => shuffle([
     ...WORDS.map(w => ({ ...w, isTarget: true })),
     ...FALSE_POSITIVES.map(w => ({ ...w, isTarget: false })),
@@ -225,14 +351,19 @@ export default function ActiveRecallApp() {
     return () => clearTimeout(id);
   }, [phase, timer]);
 
-  const goHome = () => { setPhase("intro"); setSelected(new Set()); setSubmitted(false); setScores(null); };
+  const goHome = useCallback(() => {
+    setPhase("intro");
+    setSelected(new Set());
+    setSubmitted(false);
+    setScores(null);
+  }, []);
 
   const toggleWord = (word: string) => {
     if (submitted) return;
     setSelected(prev => {
       const next = new Set(prev);
       if (next.has(word)) { next.delete(word); return next; }
-      if (next.size >= WORDS.length) return prev; // cap at word list size
+      if (next.size >= WORDS.length) return prev;
       next.add(word);
       return next;
     });
@@ -264,46 +395,83 @@ export default function ActiveRecallApp() {
     return "idle";
   };
 
-  /* INTRO */
+  /* Shared page wrapper style */
+  const page: React.CSSProperties = {
+    minHeight: "100vh",
+    background: `radial-gradient(ellipse at 60% 0%, #ddd9ff 0%, ${c.bg} 55%)`,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: pick(bp, { mobile: 32, tablet: 40, desktop: 48 }),
+    paddingBottom: pick(bp, { mobile: 32, tablet: 40, desktop: 48 }),
+    paddingLeft: pick(bp, { mobile: 14, tablet: 16, desktop: 20 }),
+    paddingRight: pick(bp, { mobile: 14, tablet: 16, desktop: 20 }),
+    fontFamily: "'Inter', system-ui, sans-serif",
+    color: c.text,
+    boxSizing: "border-box",
+    width: "100%",
+  };
+
+  /* Recall/Study grid columns */
+  const recallCols  = pick(bp, { mobile: 3, tablet: 4, laptop: 5, desktop: 6 });
+  const studyCols   = pick(bp, { mobile: 2, tablet: 2, laptop: 3, desktop: 3 });
+  const statsCols   = pick(bp, { mobile: 2, tablet: 3, laptop: 5, desktop: 5 });
+  const introCols   = pick(bp, { mobile: 1, tablet: 3, desktop: 3 });
+
+  /* ── INTRO ── */
   if (phase === "intro") return (
     <div style={page}>
-      <div style={{ maxWidth: 520, width: "100%", textAlign: "center" }}>
-        <div style={{ fontSize: 56, marginBottom: 4 }}>🧠</div>
-        <H1>Free Recall Dashboard</H1>
+      <div style={{ maxWidth: pick(bp, { mobile: "100%", tablet: "520px", desktop: "520px" }), width: "100%", textAlign: "center" }}>
+        <div style={{ fontSize: pick(bp, { mobile: 44, desktop: 56 }), marginBottom: 4 }}>🧠</div>
+        <H1 bp={bp}>Free Recall Dashboard</H1>
         <Sub>A live memory experiment for your lecture. Study a word list, wait 5 minutes, then identify the words from a mixed grid — including decoys!</Sub>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, margin: "32px 0" }}>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${introCols}, 1fr)`,
+          gap: pick(bp, { mobile: 10, desktop: 14 }),
+          margin: pick(bp, { mobile: "24px 0", desktop: "32px 0" }),
+        }}>
           {[["📖","Study","30 sec"],["⏳","Wait","5 min"],["🎯","Identify","Pick from grid"]].map(([e,t,d]) => (
-            <Card key={t} depth="lg" style={{ textAlign: "center", padding: "22px 12px" }}>
-              <div style={{ fontSize: 30 }}>{e}</div>
+            <Card key={t} bp={bp} depth="lg" style={{ textAlign: "center", padding: pick(bp, { mobile: "16px 10px", desktop: "22px 12px" }) }}>
+              <div style={{ fontSize: pick(bp, { mobile: 26, desktop: 30 }) }}>{e}</div>
               <div style={{ fontWeight: 800, color: c.text, marginTop: 8, fontSize: 14 }}>{t}</div>
               <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{d}</div>
             </Card>
           ))}
         </div>
-        <Btn onClick={() => setPhase("study")} style={{ width: "100%", padding: "15px 0", fontSize: 15 }}>Begin Experiment →</Btn>
+        <Btn bp={bp} onClick={() => setPhase("study")} style={{ width: "100%", padding: "15px 0", fontSize: 15 }}>
+          Begin Experiment →
+        </Btn>
       </div>
     </div>
   );
 
-  /* STUDY */
+  /* ── STUDY ── */
   if (phase === "study") return (
-    <div style={{ ...page, justifyContent: "flex-start", paddingTop: 48 }}>
-      <div style={{ maxWidth: 700, width: "100%" }}>
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginBottom: 4 }}>
-            <TimerBadge time={timer} color={timer < 8 ? c.rose : c.indigo} />
-            <Btn onClick={() => setPhase("distract")} color={c.muted} style={{ padding: "10px 18px", fontSize: 12, opacity: 0.85 }}>Skip →</Btn>
+    <div style={{ ...page, justifyContent: "flex-start" }}>
+      <div style={{ maxWidth: pick(bp, { mobile: "100%", tablet: "100%", laptop: "700px", desktop: "700px" }), width: "100%" }}>
+        <div style={{ textAlign: "center", marginBottom: pick(bp, { mobile: 20, desktop: 28 }) }}>
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            gap: pick(bp, { mobile: 10, desktop: 14 }), marginBottom: 4,
+            flexWrap: "wrap",
+          }}>
+            <TimerBadge bp={bp} time={timer} color={timer < 8 ? c.rose : c.indigo} />
+            <Btn bp={bp} onClick={() => setPhase("distract")} color={c.muted} style={{ padding: "10px 18px", fontSize: 12, opacity: 0.85 }}>
+              Skip →
+            </Btn>
           </div>
-          <H2>Memorise these words</H2>
+          <H2 bp={bp}>Memorise these words</H2>
           <Sub>Read carefully — you&apos;ll need to pick them out from a grid including decoys.</Sub>
         </div>
-        <Card depth="xl" style={{ padding: 24 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+        <Card bp={bp} depth="xl" style={{ padding: pick(bp, { mobile: 14, tablet: 18, desktop: 24 }) }}>
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${studyCols}, 1fr)`, gap: 10 }}>
             {WORDS.map((w, i) => (
-              <InsetPanel key={w.word} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ color: c.muted, fontSize: 11, fontWeight: 700, width: 16 }}>{i + 1}</span>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>{w.word}</span>
+              <InsetPanel key={w.word} bp={bp} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                  <span style={{ color: c.muted, fontSize: 11, fontWeight: 700, width: 16, flexShrink: 0 }}>{i + 1}</span>
+                  <span style={{ fontWeight: 700, fontSize: isMobile ? 13 : 14, overflow: "hidden", textOverflow: "ellipsis" }}>{w.word}</span>
                 </div>
                 <Badge lang={w.lang} />
               </InsetPanel>
@@ -314,25 +482,44 @@ export default function ActiveRecallApp() {
     </div>
   );
 
-  /* DISTRACT */
+  /* ── DISTRACT ── */
   if (phase === "distract") return (
     <div style={page}>
-      <div style={{ maxWidth: 460, width: "100%", textAlign: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginBottom: 4 }}>
-          <TimerBadge time={timer} color={c.teal} />
-          <Btn onClick={() => setPhase("recall")} color={c.muted} style={{ padding: "10px 18px", fontSize: 12, opacity: 0.85 }}>Skip →</Btn>
+      <div style={{ maxWidth: pick(bp, { mobile: "100%", tablet: "460px", desktop: "460px" }), width: "100%", textAlign: "center" }}>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "center",
+          gap: pick(bp, { mobile: 10, desktop: 14 }), marginBottom: 4,
+          flexWrap: "wrap",
+        }}>
+          <TimerBadge bp={bp} time={timer} color={c.teal} />
+          <Btn bp={bp} onClick={() => setPhase("recall")} color={c.muted} style={{ padding: "10px 18px", fontSize: 12, opacity: 0.85 }}>
+            Skip →
+          </Btn>
         </div>
-        <H2>Distraction Phase</H2>
+        <H2 bp={bp}>Distraction Phase</H2>
         <Sub>Look away. The recall test begins automatically — you&apos;ll pick words from a shuffled grid including decoys.</Sub>
-        <Card depth="lg" style={{ marginTop: 24, textAlign: "left" }}>
-          <InsetPanel>
+        <Card bp={bp} depth="lg" style={{ marginTop: 24, textAlign: "left" }}>
+          <InsetPanel bp={bp}>
             <p style={{ color: c.muted, margin: 0, fontSize: 13, lineHeight: 1.7 }}>
               💡 <strong style={{ color: c.text }}>Cognitive note:</strong> This delay simulates real-world memory decay as described by Ebbinghaus. Without rehearsal, retention drops sharply within minutes.
             </p>
           </InsetPanel>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 14 }}>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: pick(bp, { mobile: "1fr", tablet: "1fr 1fr", desktop: "1fr 1fr" }),
+            gap: 10,
+            marginTop: 14,
+          }}>
             {["Primacy Effect","Recency Effect","Shallow Processing","Storage Decay"].map(t => (
-              <div key={t} style={{ background: "#ede9fe", borderRadius: 10, padding: "11px 14px", color: c.indigo, fontWeight: 700, fontSize: 12, border: `1px solid #c4b5fd`, boxShadow: "0 1px 4px rgba(100,80,200,0.10)" }}>{t}</div>
+              <div key={t} style={{
+                background: "#ede9fe", borderRadius: 10,
+                padding: "11px 14px",
+                color: c.indigo, fontWeight: 700, fontSize: 12,
+                border: `1px solid #c4b5fd`,
+                boxShadow: "0 1px 4px rgba(100,80,200,0.10)",
+                minHeight: 44,
+                display: "flex", alignItems: "center",
+              }}>{t}</div>
             ))}
           </div>
         </Card>
@@ -340,13 +527,13 @@ export default function ActiveRecallApp() {
     </div>
   );
 
-  /* RECALL */
+  /* ── RECALL ── */
   if (phase === "recall") return (
-    <div style={{ ...page, justifyContent: "flex-start", paddingTop: 48 }}>
-      <div style={{ maxWidth: 960, width: "100%" }}>
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ fontSize: 44, marginBottom: 4 }}>🎯</div>
-          <H2>Free Recall Test</H2>
+    <div style={{ ...page, justifyContent: "flex-start" }}>
+      <div style={{ maxWidth: pick(bp, { mobile: "100%", tablet: "100%", laptop: "960px", desktop: "960px" }), width: "100%" }}>
+        <div style={{ textAlign: "center", marginBottom: pick(bp, { mobile: 20, desktop: 28 }) }}>
+          <div style={{ fontSize: pick(bp, { mobile: 36, desktop: 44 }), marginBottom: 4 }}>🎯</div>
+          <H2 bp={bp}>Free Recall Test</H2>
           <Sub>Select every word you remember seeing. Watch out — decoys are mixed in!</Sub>
         </div>
 
@@ -354,29 +541,48 @@ export default function ActiveRecallApp() {
         <div style={{ display: "flex", gap: 16, justifyContent: "center", marginBottom: 20, flexWrap: "wrap" }}>
           {[["Unselected", c.border, c.muted], ["Selected", c.indigo, c.indigo]].map(([l, border, col]) => (
             <div key={l} style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <div style={{ width: 14, height: 14, borderRadius: 4, border: `2px solid ${border}`, background: l === "Selected" ? "#ede9fe" : c.surface }} />
+              <div style={{ width: 14, height: 14, borderRadius: 4, border: `2px solid ${border}`, background: l === "Selected" ? "#ede9fe" : c.surface, flexShrink: 0 }} />
               <span style={{ fontSize: 12, color: c.muted, fontWeight: 600 }}>{l}</span>
             </div>
           ))}
         </div>
 
-        <Card depth="xl" style={{ padding: 24 }}>
-          <InsetPanel style={{ padding: 16 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
+        <Card bp={bp} depth="xl" style={{ padding: pick(bp, { mobile: 12, tablet: 16, desktop: 24 }) }}>
+          <InsetPanel bp={bp} style={{ padding: pick(bp, { mobile: 10, tablet: 12, desktop: 16 }) }}>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${recallCols}, 1fr)`, gap: pick(bp, { mobile: 6, tablet: 8, desktop: 10 }) }}>
               {grid.map(item => (
-                <WordTile key={item.word} word={item.word} lang={item.lang} state={getTileState(item)} onClick={() => toggleWord(item.word)} />
+                <WordTile
+                  key={item.word}
+                  word={item.word}
+                  lang={item.lang}
+                  state={getTileState(item)}
+                  onClick={() => toggleWord(item.word)}
+                  bp={bp}
+                />
               ))}
             </div>
           </InsetPanel>
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20, flexWrap: "wrap", gap: 12 }}>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginTop: 20,
+            flexWrap: "wrap",
+            gap: 12,
+          }}>
             <div style={{ fontSize: 13, color: c.muted }}>
               <strong style={{ color: selected.size >= WORDS.length ? c.rose : c.indigo }}>{selected.size}</strong>
               <span> / {WORDS.length} selected</span>
               {selected.size >= WORDS.length && <span style={{ color: c.rose, fontWeight: 700, marginLeft: 8 }}>Max reached</span>}
             </div>
-            <Btn onClick={submit} disabled={selected.size === 0} style={{ padding: "13px 32px" }}>
-              Submit & See Analytics →
+            <Btn
+              bp={bp}
+              onClick={submit}
+              disabled={selected.size === 0}
+              style={isSmall ? { width: "100%", padding: "14px 0" } : { padding: "13px 32px" }}
+            >
+              Submit &amp; See Analytics →
             </Btn>
           </div>
         </Card>
@@ -384,7 +590,7 @@ export default function ActiveRecallApp() {
     </div>
   );
 
-  /* RESULTS */
+  /* ── RESULTS ── */
   if (phase === "results" && scores) {
     const { matched, enRate, svRate, total, forgetting, audienceRet, falsePosCount } = scores;
 
@@ -395,54 +601,89 @@ export default function ActiveRecallApp() {
     ];
 
     return (
-      <div style={{ ...page, justifyContent: "flex-start", paddingTop: 48 }}>
-        <div style={{ maxWidth: 880, width: "100%" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
-            <button onClick={goHome} style={{ background: "none", border: `1.5px solid ${c.border}`, borderRadius: 10, padding: "8px 16px", fontSize: 13, color: c.muted, cursor: "pointer", fontWeight: 600, display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit" }}>← Home</button>
-            <div style={{ textAlign: "center", flex: 1 }}>
-              <div style={{ fontSize: 48, marginBottom: 4 }}>📊</div>
-              <H1>Your Results</H1>
+      <div style={{ ...page, justifyContent: "flex-start" }}>
+        <div style={{ maxWidth: pick(bp, { mobile: "100%", tablet: "100%", laptop: "880px", desktop: "880px" }), width: "100%" }}>
+
+          {/* Header row */}
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            marginBottom: pick(bp, { mobile: 20, desktop: 28 }),
+            flexWrap: "wrap",
+            gap: 12,
+          }}>
+            <button
+              onClick={goHome}
+              style={{
+                background: "none",
+                border: `1.5px solid ${c.border}`,
+                borderRadius: 10,
+                padding: "8px 16px",
+                fontSize: 13,
+                color: c.muted,
+                cursor: "pointer",
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontFamily: "inherit",
+                minHeight: 44,
+              }}
+            >← Home</button>
+            <div style={{ textAlign: "center", flex: 1, minWidth: "60%" }}>
+              <div style={{ fontSize: pick(bp, { mobile: 36, desktop: 48 }), marginBottom: 4 }}>📊</div>
+              <H1 bp={bp}>Your Results</H1>
               <Sub>Here&apos;s what cognitive science says about your memory performance.</Sub>
             </div>
-            <div style={{ width: 88 }} />{/* spacer to balance the home button */}
+            {!isSmall && <div style={{ width: 88 }} />}
           </div>
 
-          {/* Stats */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, marginBottom: 24 }}>
-            <StatPill label="WORDS RECALLED"    value={`${total}/${WORDS.length}`}  color={c.indigo} />
-            <StatPill label="RETENTION"         value={`${audienceRet}%`}           color={c.violet} />
-            <StatPill label="ENGLISH RECALL"    value={`${enRate}%`}                color={c.indigo} />
-            <StatPill label="SWEDISH RECALL"    value={`${svRate}%`}                color={c.rose}   />
-            <StatPill label="FALSE POSITIVES"   value={falsePosCount}               color={falsePosCount > 0 ? c.rose : c.teal} />
+          {/* Stats pills */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${statsCols}, 1fr)`,
+            gap: pick(bp, { mobile: 10, tablet: 12, desktop: 14 }),
+            marginBottom: 24,
+          }}>
+            <StatPill label="WORDS RECALLED"  value={`${total}/${WORDS.length}`} color={c.indigo} />
+            <StatPill label="RETENTION"        value={`${audienceRet}%`}          color={c.violet} />
+            <StatPill label="ENGLISH RECALL"   value={`${enRate}%`}               color={c.indigo} />
+            <StatPill label="SWEDISH RECALL"   value={`${svRate}%`}               color={c.rose}   />
+            <StatPill label="FALSE POSITIVES"  value={falsePosCount}              color={falsePosCount > 0 ? c.rose : c.teal} />
           </div>
 
-          {/* Grid review */}
-          <Card depth="lg" style={{ marginBottom: 22 }}>
+          {/* Selection review */}
+          <Card bp={bp} depth="lg" style={{ marginBottom: 22 }}>
             <H3>Selection Review</H3>
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap", margin: "10px 0 16px" }}>
-              {[["✓ Correct", "#dcfce7", "#86efac", c.green],["○ Missed", "#fff7ed", "#fdba74","#c2410c"],["✗ False Positive","#fee2e2","#fca5a5",c.rose],["Correct Rejection",c.surface,c.border,c.muted]].map(([l,bg,border,col]) => (
+              {[["✓ Correct","#dcfce7","#86efac",c.green],["○ Missed","#fff7ed","#fdba74","#c2410c"],["✗ False Positive","#fee2e2","#fca5a5",c.rose],["Correct Rejection",c.surface,c.border,c.muted]].map(([l,bg,border,col]) => (
                 <div key={l} style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                  <div style={{ width: 12, height: 12, borderRadius: 3, background: bg, border: `1.5px solid ${border}` }} />
+                  <div style={{ width: 12, height: 12, borderRadius: 3, background: bg, border: `1.5px solid ${border}`, flexShrink: 0 }} />
                   <span style={{ fontSize: 12, color: c.muted, fontWeight: 600 }}>{l}</span>
                 </div>
               ))}
             </div>
-            <InsetPanel style={{ padding: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
+            <InsetPanel bp={bp} style={{ padding: pick(bp, { mobile: 10, tablet: 12, desktop: 16 }) }}>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${recallCols}, 1fr)`,
+                gap: pick(bp, { mobile: 6, tablet: 8, desktop: 10 }),
+              }}>
                 {grid.map(item => (
-                  <WordTile key={item.word} word={item.word} lang={item.lang} state={getTileState(item)} onClick={() => {}} />
+                  <WordTile key={item.word} word={item.word} lang={item.lang} state={getTileState(item)} onClick={() => {}} bp={bp} />
                 ))}
               </div>
             </InsetPanel>
           </Card>
 
-          {/* Chart 1 */}
-          <Card depth="lg" style={{ marginBottom: 22 }}>
+          {/* Chart 1 — Serial Position */}
+          <Card bp={bp} depth="lg" style={{ marginBottom: 22 }}>
             <H3>1 — Serial Position Curve</H3>
             <ChartSub>Recall by word position. Notice the <strong>Primacy effect</strong> (start) and <strong>Recency effect</strong> (end).</ChartSub>
-            <InsetPanel style={{ padding: "20px 8px 8px" }}>
-              <ResponsiveContainer width="100%" height={230}>
-                <AreaChart data={serialData} margin={{ top: 8, right: 16, left: -10, bottom: 0 }}>
+            <InsetPanel bp={bp} style={{ padding: "20px 8px 8px" }}>
+              <ResponsiveContainer width="100%" height={pick(bp, { mobile: 180, tablet: 200, desktop: 230 })}>
+                <AreaChart data={serialData} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>
                   <defs>
                     <linearGradient id="gI" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%"  stopColor={c.indigo} stopOpacity={0.2} />
@@ -450,27 +691,27 @@ export default function ActiveRecallApp() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={c.border} />
-                  <XAxis dataKey="name" label={{ value: "Word Position", position: "insideBottom", offset: -2, fontSize: 11, fill: c.muted }} tick={{ fontSize: 11, fill: c.muted }} />
-                  <YAxis domain={[0, 110]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11, fill: c.muted }} />
+                  <XAxis dataKey="name" label={{ value: "Word Position", position: "insideBottom", offset: -2, fontSize: 11, fill: c.muted }} tick={{ fontSize: 10, fill: c.muted }} />
+                  <YAxis domain={[0, 110]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 10, fill: c.muted }} width={36} />
                   <Tooltip formatter={((v: number | undefined, _: string | undefined, pl: unknown) => [`${v ?? 0}%`, (pl as { payload?: { word?: string } })?.payload?.word ?? ""]) as never} labelFormatter={(l: unknown) => `Position ${l}`} contentStyle={{ borderRadius: 10, border: `1px solid ${c.border}`, boxShadow: shadows.md }} />
-                  <ReferenceLine x="3"  stroke={c.violet} strokeDasharray="4 3" label={{ value: "Primacy", fontSize: 10, fill: c.violet, position: "top" }} />
-                  <ReferenceLine x="13" stroke={c.teal}   strokeDasharray="4 3" label={{ value: "Recency", fontSize: 10, fill: c.teal,   position: "top" }} />
-                  <Area type="monotone" dataKey="recalled" stroke={c.indigo} strokeWidth={2.5} fill="url(#gI)" dot={{ r: 5, fill: c.indigo, stroke: "#fff", strokeWidth: 2 }} activeDot={{ r: 7 }} />
+                  <ReferenceLine x="3"  stroke={c.violet} strokeDasharray="4 3" label={{ value: "Primacy", fontSize: 9, fill: c.violet, position: "top" }} />
+                  <ReferenceLine x="13" stroke={c.teal}   strokeDasharray="4 3" label={{ value: "Recency", fontSize: 9, fill: c.teal,   position: "top" }} />
+                  <Area type="monotone" dataKey="recalled" stroke={c.indigo} strokeWidth={2.5} fill="url(#gI)" dot={{ r: 4, fill: c.indigo, stroke: "#fff", strokeWidth: 2 }} activeDot={{ r: 6 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </InsetPanel>
           </Card>
 
-          {/* Chart 2 */}
-          <Card depth="lg" style={{ marginBottom: 22 }}>
+          {/* Chart 2 — Encoding Depth */}
+          <Card bp={bp} depth="lg" style={{ marginBottom: 22 }}>
             <H3>2 — Encoding Depth Chart</H3>
             <ChartSub><strong>Deep processing</strong> (English) vs <strong>shallow processing</strong> (Swedish). Deeper encoding = better recall.</ChartSub>
-            <InsetPanel style={{ padding: "20px 8px 8px" }}>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={encodingData} margin={{ top: 8, right: 16, left: -10, bottom: 0 }}>
+            <InsetPanel bp={bp} style={{ padding: "20px 8px 8px" }}>
+              <ResponsiveContainer width="100%" height={pick(bp, { mobile: 160, tablet: 180, desktop: 200 })}>
+                <BarChart data={encodingData} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={c.border} vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 13, fill: c.muted, fontWeight: 700 }} />
-                  <YAxis domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11, fill: c.muted }} />
+                  <XAxis dataKey="name" tick={{ fontSize: 12, fill: c.muted, fontWeight: 700 }} />
+                  <YAxis domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 10, fill: c.muted }} width={36} />
                   <Tooltip formatter={(v: number | undefined) => [`${v ?? 0}%`, "Recall Rate"]} contentStyle={{ borderRadius: 10, border: `1px solid ${c.border}`, boxShadow: shadows.md }} />
                   <Bar dataKey="rate" radius={[10, 10, 0, 0]} maxBarSize={80}>
                     <Cell fill={c.indigo} />
@@ -479,38 +720,39 @@ export default function ActiveRecallApp() {
                 </BarChart>
               </ResponsiveContainer>
             </InsetPanel>
-            <div style={{ display: "flex", gap: 20, marginTop: 12 }}>
+            <div style={{ display: "flex", gap: 20, marginTop: 12, flexWrap: "wrap" }}>
               {[["English (Deep)", c.indigo], ["Swedish (Shallow)", c.rose]].map(([l, col]) => (
                 <div key={l} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: 3, background: col, boxShadow: `0 0 0 2px ${col}44` }} />
+                  <div style={{ width: 10, height: 10, borderRadius: 3, background: col, boxShadow: `0 0 0 2px ${col}44`, flexShrink: 0 }} />
                   <span style={{ fontSize: 12, color: c.muted, fontWeight: 600 }}>{l}</span>
                 </div>
               ))}
             </div>
           </Card>
 
-          {/* Chart 3 */}
-          <Card depth="lg" style={{ marginBottom: 40 }}>
+          {/* Chart 3 — Forgetting Curve */}
+          <Card bp={bp} depth="lg" style={{ marginBottom: 40 }}>
             <H3>3 — The Forgetting Curve</H3>
             <ChartSub>Your 5-minute recall vs the <strong>Ebbinghaus retention curve</strong>. Without review, memory decays rapidly.</ChartSub>
-            <InsetPanel style={{ padding: "20px 8px 8px" }}>
-              <ResponsiveContainer width="100%" height={230}>
-                <LineChart data={forgetting} margin={{ top: 8, right: 16, left: -10, bottom: 0 }}>
+            <InsetPanel bp={bp} style={{ padding: "20px 8px 8px" }}>
+              <ResponsiveContainer width="100%" height={pick(bp, { mobile: 180, tablet: 200, desktop: 230 })}>
+                <LineChart data={forgetting} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={c.border} />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: c.muted }} />
-                  <YAxis domain={[0, 110]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 11, fill: c.muted }} />
+                  <XAxis dataKey="label" tick={{ fontSize: isMobile ? 9 : 11, fill: c.muted }} />
+                  <YAxis domain={[0, 110]} tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 10, fill: c.muted }} width={36} />
                   <Tooltip formatter={(v: number | undefined, n: string | undefined) => [`${v ?? 0}%`, n === "retention" ? "Ebbinghaus" : "Your Score"]} contentStyle={{ borderRadius: 10, border: `1px solid ${c.border}`, boxShadow: shadows.md }} />
                   <Legend formatter={(v: unknown) => v === "retention" ? "Ebbinghaus Curve" : "Your Score"} wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="retention" stroke={c.muted}   strokeWidth={2} strokeDasharray="6 3" dot={{ r: 4, fill: c.muted, stroke: "#fff", strokeWidth: 2 }} />
-                  <Line type="monotone" dataKey="audience"  stroke={c.violet}  strokeWidth={3} dot={{ r: 8, fill: c.violet, stroke: "#fff", strokeWidth: 3 }} connectNulls={false} />
+                  <Line type="monotone" dataKey="retention" stroke={c.muted}  strokeWidth={2} strokeDasharray="6 3" dot={{ r: 4, fill: c.muted, stroke: "#fff", strokeWidth: 2 }} />
+                  <Line type="monotone" dataKey="audience"  stroke={c.violet} strokeWidth={3} dot={{ r: 7, fill: c.violet, stroke: "#fff", strokeWidth: 3 }} connectNulls={false} />
                 </LineChart>
               </ResponsiveContainer>
             </InsetPanel>
           </Card>
 
           <div style={{ textAlign: "center", marginBottom: 56 }}>
-            <Btn color={c.teal} onClick={goHome} style={{ padding: "14px 36px", fontSize: 15 }}>↺ Run Again</Btn>
+            <Btn bp={bp} color={c.teal} onClick={goHome} style={{ padding: "14px 36px", fontSize: 15 }}>↺ Run Again</Btn>
           </div>
+
         </div>
       </div>
     );
