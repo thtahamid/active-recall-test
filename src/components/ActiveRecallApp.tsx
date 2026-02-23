@@ -424,7 +424,7 @@ export default function ActiveRecallApp() {
     <div style={page}>
       <div style={{ maxWidth: pick(bp, { mobile: "100%", tablet: "520px", desktop: "520px" }), width: "100%", textAlign: "center" }}>
         <div style={{ fontSize: pick(bp, { mobile: 44, desktop: 56 }), marginBottom: 4 }}>🧠</div>
-        <H1 bp={bp}>Free Recall Dashboard</H1>
+        <H1 bp={bp}>Active Recall Test</H1>
         <Sub>A live memory experiment for your lecture. Study a word list, wait 5 minutes, then identify the words from a mixed grid — including decoys!</Sub>
         <div style={{
           display: "grid",
