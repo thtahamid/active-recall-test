@@ -73,7 +73,7 @@ const FALSE_POSITIVES = [
   { word: "Natt",     lang: "SV" },
 ];
 
-const STUDY_TIME    = 30;
+const STUDY_TIME    = 40;
 const DISTRACT_TIME = 300;
 
 const EBBINGHAUS = [
@@ -322,6 +322,12 @@ interface Scores {
 
 /* ── Main App ── */
 export default function ActiveRecallApp() {
+  const [mounted, setMounted] = useState(false);
+  
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const bp = useBreakpoint();
   const isMobile = bp === "mobile";
   const isSmall  = bp === "mobile" || bp === "tablet";
@@ -395,6 +401,8 @@ export default function ActiveRecallApp() {
     return "idle";
   };
 
+  if (!mounted) return null;
+
   /* Shared page wrapper style */
   const page: React.CSSProperties = {
     minHeight: "100vh",
@@ -458,9 +466,6 @@ export default function ActiveRecallApp() {
             flexWrap: "wrap",
           }}>
             <TimerBadge bp={bp} time={timer} color={timer < 8 ? c.rose : c.indigo} />
-            <Btn bp={bp} onClick={() => setPhase("distract")} color={c.muted} style={{ padding: "10px 18px", fontSize: 12, opacity: 0.85 }}>
-              Skip →
-            </Btn>
           </div>
           <H2 bp={bp}>Memorise these words</H2>
           <Sub>Read carefully — you&apos;ll need to pick them out from a grid including decoys.</Sub>
@@ -492,9 +497,6 @@ export default function ActiveRecallApp() {
           flexWrap: "wrap",
         }}>
           <TimerBadge bp={bp} time={timer} color={c.teal} />
-          <Btn bp={bp} onClick={() => setPhase("recall")} color={c.muted} style={{ padding: "10px 18px", fontSize: 12, opacity: 0.85 }}>
-            Skip →
-          </Btn>
         </div>
         <H2 bp={bp}>Distraction Phase</H2>
         <Sub>Look away. The recall test begins automatically — you&apos;ll pick words from a shuffled grid including decoys.</Sub>
